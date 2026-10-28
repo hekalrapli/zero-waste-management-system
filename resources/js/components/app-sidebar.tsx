@@ -1,0 +1,79 @@
+import { Link, usePage } from '@inertiajs/react';
+import { ClipboardCheck, Database, Globe, LayoutDashboard, ListTodo, MessageSquare, Recycle, Scale, Settings, Truck, Users } from 'lucide-react';
+import AppLogo from '@/components/app-logo';
+import { NavMain } from '@/components/nav-main';
+import { NavUser } from '@/components/nav-user';
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarHeader,
+} from '@/components/ui/sidebar';
+import type { Auth, NavItem } from '@/types';
+
+export function AppSidebar() {
+    const { auth } = usePage().props as { auth: Auth };
+
+    const prefix = auth.user.role === 'admin' ? 'admin' : 'petugas';
+
+    const sharedNavItems: NavItem[] = [
+        { title: 'Dashboard', href: `/${prefix}/dashboard`, icon: LayoutDashboard },
+        { title: 'Penimbangan', href: `/${prefix}/penimbangan`, icon: Scale },
+        { title: 'Pilah Sampah', href: `/${prefix}/pilah-sampah`, icon: Recycle },
+        { title: 'Distribusi', href: `/${prefix}/distribusi`, icon: Truck },
+    ];
+
+    const adminNavItems: NavItem[] = [
+        { title: 'Checklist Pekerjaan', href: '/admin/checklist-pekerjaan', icon: LayoutDashboard },
+        { title: 'Kelola Pekerjaan', href: '/admin/kelola-pekerjaan', icon: ListTodo },
+        {
+            title: 'Kelola Website',
+            icon: Globe,
+            items: [
+                { title: 'Peraturan', href: '/admin/dokumen' },
+                { title: 'Struktur', href: '/admin/dokumen' },
+                { title: 'SOP', href: '/admin/dokumen' },
+                { title: 'Berita', href: '/admin/berita' },
+                { title: 'Poster Edukasi', href: '/admin/poster' },
+            ],
+        },
+        { title: 'Data Dasar', href: '/admin/data-dasar', icon: Database },
+        { title: 'Kelola Data', href: '/admin/kelola-data', icon: Settings },
+        { title: 'Kelola Review', href: '/admin/review', icon: MessageSquare },
+        { title: 'Akun', href: '/admin/akun', icon: Users },
+    ];
+
+    const petugasNavItems: NavItem[] = [
+        { title: 'Checklist Pekerjaan', href: '/petugas/checklist-pekerjaan', icon: ClipboardCheck },
+    ];
+
+    const navItems: NavItem[] = auth.user.role === 'admin'
+        ? [...sharedNavItems, ...adminNavItems]
+        : [...sharedNavItems, ...petugasNavItems];
+
+    return (
+        <Sidebar collapsible="icon">
+            <SidebarHeader>
+                <Link
+                    href="/form"
+                    prefetch
+                    className="grid w-full items-center px-4 py-4 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-2"
+                >
+                    <AppLogo />
+                </Link>
+            </SidebarHeader>
+
+            <SidebarContent>
+                <NavMain items={navItems} />
+            </SidebarContent>
+
+            <SidebarFooter>
+                <NavUser />
+            </SidebarFooter>
+        </Sidebar>
+    );
+}
+
+function portalHref(path: string): string {
+    return `/${path}`;
+}

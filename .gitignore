@@ -1,14 +1,37 @@
-# Environment and secrets
+/.phpunit.cache
+/bootstrap/ssr
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/resources/js/actions
+/resources/js/routes
+/resources/js/wayfinder
+/vendor
+.DS_Store
 .env
 .env.*
 !.env.example
-
-# Logs
-*.log
-
-# OS and editor files
-.DS_Store
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
 Thumbs.db
 desktop.ini
-.idea/
-.vscode/
+npm-debug.log
+yarn-error.log
+/auth.json
+/backup_*.sql
+/database/*.sqlite*
+/public/adminer.php
+/public/documents/
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.zed

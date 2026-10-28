@@ -9,7 +9,7 @@ A web platform for structured waste recording, monitoring, and reporting in supp
 | Timeline | July–August 2026 |
 | Institution | UPT Perpustakaan Universitas Diponegoro |
 | Stack | React, Laravel |
-| Repository | Portfolio case study and documentation only |
+| Repository | Portfolio case study with application source |
 
 ## Overview
 
@@ -17,7 +17,7 @@ Zero-Waste Management System is a web application built to support the library's
 
 The application was developed collaboratively by a team during an internship at UPT Perpustakaan Universitas Diponegoro, using React for the frontend and Laravel for the backend.
 
-This repository documents the project as a portfolio case study. The original source code is private and is not included here.
+This repository contains the application source for portfolio review, shared with permission from the project owner. Environment files, credentials, database data, and uploaded media are not included.
 
 ## Problem Statement
 
@@ -85,6 +85,36 @@ The project supports the institution's zero-waste program. It does not, by itsel
 
 Only technologies verified from the project are listed.
 
+## Getting Started
+
+### Prerequisites
+
+- PHP 8.3 or later
+- Composer
+- Node.js and npm
+- MySQL
+
+### Local setup
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+
+# Configure the MySQL database in .env, then create the `zero_waste` database.
+# Set SEED_DEMO_PASSWORD in .env before seeding to create the demo accounts.
+php artisan migrate --seed
+php artisan storage:link
+
+npm install
+npm run build
+php artisan serve
+```
+
+When `SEED_DEMO_PASSWORD` is set, the demo administrator account uses `admin@example.test` and the staff accounts use `staff1@example.test` through `staff5@example.test`. `AkunSeeder` skips account creation when the password is empty.
+
+The original database, uploaded documents and images, and environment credentials are not included. The commands above create a fresh local database from the included migrations and seeders.
+
 ## My Contributions
 
 As a member of the development team, I contributed across the frontend and backend of the application:
@@ -97,12 +127,12 @@ As a member of the development team, I contributed across the frontend and backe
 
 This was a collaborative internship project at UPT Perpustakaan Universitas Diponegoro from July to August 2026. I worked as a collaborator on a private repository owned by another party.
 
-The original application, source code, configuration, and assets remain with the project owner. This repository is a separate portfolio case study; it does not redistribute the original codebase, credentials, database data, or Git history. Screenshots are included only for project documentation.
+The application source is included with permission from the project owner for portfolio review. Ownership remains with the original owner. Environment files, credentials, the original database, uploaded media, and the original Git history are not included.
 
-Institution names and logos shown in the screenshots remain the property of their respective owners.
+Screenshots and seed data are included for documentation and demonstration purposes. Institution names and logos, as well as third-party materials shown in the application, remain the property of their respective owners.
 
 ## Project Status
 
 **Status:** Completed internship project (July–August 2026).
 
-This repository contains portfolio documentation and screenshots only. The application source code is private, no public demo is linked, and this is not the official project repository.
+This repository contains the application source for portfolio review, along with documentation and screenshots. No public demo is linked. Ownership of the original application remains with the project owner, and this is not the official project repository.

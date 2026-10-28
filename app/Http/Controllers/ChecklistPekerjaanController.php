@@ -1,0 +1,462 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Helpers\OptionHelper;
+use App\Models\ChecklistPekerjaan;
+use App\Models\MasterPekerjaan;
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class ChecklistPekerjaanController extends Controller
+{
+    private function calculateProgress(string $nip, string $referenceDate): array
+    {
+        $ref = Carbon::parse($referenceDate)->startOfDay();
+        $startOfWeek = $ref->copy()->startOfWeek();
+        $endOfWeek = $ref->copy()->endOfWeek();
+        $startOfMonth = $ref->copy()->startOfMonth();
+        $endOfMonth = $ref->copy()->endOfMonth();
+
+        $harianTotal = MasterPekerjaan::active()->where('jenis_pekerjaan', 'harian')->count();
+        $mingguanTotal = MasterPekerjaan::active()->where('jenis_pekerjaan', 'mingguan')->count();
+        $bulananTotal = MasterPekerjaan::active()->where('jenis_pekerjaan', 'bulanan')->count();
+
+        $harianSelesai = ChecklistPekerjaan::where('nip', $nip)
+            ->where('tanggal', $ref->toDateString())
+            ->where('status', 'sudah')
+            ->where('jenis_pekerjaan', 'harian')
+            ->groupBy('master_pekerjaan_id')
+            ->pluck('master_pekerjaan_id')
+            ->count();
+
+        $mingguanSelesai = ChecklistPekerjaan::where('nip', $nip)
+            ->whereBetween('tanggal', [$startOfWeek->toDateString(), $endOfWeek->toDateString()])
+            ->where('status', 'sudah')
+            ->where('jenis_pekerjaan', 'mingguan')
+            ->groupBy('master_pekerjaan_id')
+            ->pluck('master_pekerjaan_id')
+            ->count();
+
+        $bulananSelesai = ChecklistPekerjaan::where('nip', $nip)
+            ->whereBetween('tanggal', [$startOfMonth->toDateString(), $endOfMonth->toDateString()])
+            ->where('status', 'sudah')
+            ->where('jenis_pekerjaan', 'bulanan')
+            ->groupBy('master_pekerjaan_id')
+            ->pluck('master_pekerjaan_id')
+            ->count();
+
+        Carbon::setLocale('id');
+
+        return [
+            'harian' => [
+                'total' => $harianTotal,
+                'selesai' => $harianSelesai,
+                'persentase' => $harianTotal > 0 ? (int) round(($harianSelesai / $harianTotal) * 100) : 0,
+                'periode' => $ref->translatedFormat('d F Y'),
+            ],
+            'mingguan' => [
+                'total' => $mingguanTotal,
+                'selesai' => $mingguanSelesai,
+                'persentase' => $mingguanTotal > 0 ? (int) round(($mingguanSelesai / $mingguanTotal) * 100) : 0,
+                'periode' => $startOfWeek->translatedFormat('d') . ' - ' . $endOfWeek->translatedFormat('d F Y'),
+            ],
+            'bulanan' => [
+                'total' => $bulananTotal,
+                'selesai' => $bulananSelesai,
+                'persentase' => $bulananTotal > 0 ? (int) round(($bulananSelesai / $bulananTotal) * 100) : 0,
+                'periode' => $startOfMonth->translatedFormat('d') . ' - ' . $endOfMonth->translatedFormat('d F Y'),
+            ],
+        ];
+    }
+
+    public function index(): Response
+    {
+        $petugas = User::where('role', 'petugas')
+            ->get(['id', 'name', 'nip']);
+
+        return Inertia::render('checklist-pekerjaan/index', [
+            'petugas' => $petugas,
+        ]);
+    }
+
+    public function show(string $nip, Request $request): Response
+    {
+        if (blank($nip) || $nip === 'null' || $nip === 'undefined') {
+            abort(404, 'NIP tidak valid.');
+        }
+
+        $petugas = User::where('role', 'petugas')->where('nip', $nip)->firstOrFail();
+        $tanggal = $request->query('tanggal', now()->toDateString());
+
+        $filter = $request->query('jenis');
+        if ($filter && !in_array($filter, ['harian', 'mingguan', 'bulanan'])) {
+            $filter = null;
+        }
+
+        $areaFilter = $request->query('area');
+
+        $masterTasks = MasterPekerjaan::active()->ordered()->get();
+
+        $checklist = $areaFilter
+            ? ChecklistPekerjaan::where('nip', $nip)
+                ->where('tanggal', $tanggal)
+                ->where('area', $areaFilter)
+                ->get()
+                ->keyBy('master_pekerjaan_id')
+            : collect();
+
+        $areas = OptionHelper::get('area');
+        $progress = $this->calculateProgress($nip, $tanggal);
+
+        return Inertia::render('checklist-pekerjaan/show', [
+            'petugas' => $petugas,
+            'tanggal' => $tanggal,
+            'masterTasks' => $masterTasks,
+            'checklist' => $checklist,
+            'filter' => $filter,
+            'areaFilter' => $areaFilter,
+            'areas' => $areas,
+            'progress' => $progress,
+        ]);
+    }
+
+    public function showForAuthPetugas(Request $request): Response
+    {
+        $user = $request->user();
+
+        abort_unless($user !== null, 401);
+        abort_unless($user->role === 'petugas', 403);
+
+        $tanggal = $request->query('tanggal', now()->toDateString());
+
+        $filter = $request->query('jenis');
+        if ($filter && !in_array($filter, ['harian', 'mingguan', 'bulanan'])) {
+            $filter = null;
+        }
+
+        $areaFilter = $request->query('area');
+
+        $masterTasks = MasterPekerjaan::active()->ordered()->get();
+
+        $checklist = $areaFilter
+            ? ChecklistPekerjaan::where('nip', $user->nip)
+                ->where('tanggal', $tanggal)
+                ->where('area', $areaFilter)
+                ->get()
+                ->keyBy('master_pekerjaan_id')
+            : collect();
+
+        $areas = OptionHelper::get('area');
+        $progress = $this->calculateProgress($user->nip, $tanggal);
+
+        return Inertia::render('checklist-pekerjaan/show', [
+            'petugas' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'nip' => $user->nip,
+            ],
+            'tanggal' => $tanggal,
+            'masterTasks' => $masterTasks,
+            'checklist' => $checklist,
+            'filter' => $filter,
+            'areaFilter' => $areaFilter,
+            'areas' => $areas,
+            'readOnly' => true,
+            'progress' => $progress,
+        ]);
+    }
+
+    public function formPage(Request $request): Response
+    {
+        $user = $request->user();
+
+        $nip = $user->nip;
+        $tanggal = $request->query('tanggal', now()->toDateString());
+        $areaFilter = $request->query('area');
+
+        $masterTasks = MasterPekerjaan::active()->ordered()->get();
+
+        $checklist = $areaFilter
+            ? ChecklistPekerjaan::where('nip', $nip)
+                ->where('tanggal', $tanggal)
+                ->where('area', $areaFilter)
+                ->get()
+                ->keyBy('master_pekerjaan_id')
+            : collect();
+
+        $areas = OptionHelper::get('area');
+        $progress = $this->calculateProgress($nip, $tanggal);
+
+        return Inertia::render('form/pekerjaan', [
+            'tanggal' => $tanggal,
+            'masterTasks' => $masterTasks,
+            'checklist' => $checklist,
+            'areaFilter' => $areaFilter,
+            'areas' => $areas,
+            'progress' => $progress,
+        ]);
+    }
+
+    public function history(string $nip, Request $request): Response
+    {
+        if (blank($nip) || $nip === 'null' || $nip === 'undefined') {
+            abort(404, 'NIP tidak valid.');
+        }
+
+        $petugas = User::where('role', 'petugas')->where('nip', $nip)->firstOrFail();
+
+        $query = ChecklistPekerjaan::where('nip', $nip);
+
+        if ($request->query('start_date')) {
+            $query->where('tanggal', '>=', $request->query('start_date'));
+        }
+
+        if ($request->query('end_date')) {
+            $query->where('tanggal', '<=', $request->query('end_date'));
+        }
+
+        if ($request->query('status')) {
+            $query->where('status', $request->query('status'));
+        }
+
+        if ($request->query('area')) {
+            $query->where('area', $request->query('area'));
+        }
+
+        $records = $query->orderBy('tanggal', 'desc')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('tanggal')
+            ->map(function ($items, $tanggal) {
+                $total = $items->count();
+                $selesai = $items->where('status', 'sudah')->count();
+
+                return [
+                    'tanggal' => $tanggal,
+                    'total' => $total,
+                    'selesai' => $selesai,
+                    'belum' => $total - $selesai,
+                ];
+            })
+            ->values();
+
+        return Inertia::render('checklist-pekerjaan/history', [
+            'petugas' => $petugas,
+            'records' => $records,
+        ]);
+    }
+
+    public function export(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $nip = $request->query('nip');
+
+        if (blank($nip) || $nip === 'null' || $nip === 'undefined') {
+            abort(404, 'NIP tidak valid.');
+        }
+
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+        $status = $request->query('status');
+        $area = $request->query('area');
+
+        $petugas = User::where('role', 'petugas')->where('nip', $nip)->firstOrFail();
+
+        $query = ChecklistPekerjaan::where('nip', $nip);
+
+        if ($startDate) {
+            $query->where('tanggal', '>=', $startDate);
+        }
+
+        if ($endDate) {
+            $query->where('tanggal', '<=', $endDate);
+        }
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($area) {
+            $query->where('checklist_pekerjaan.area', $area);
+        }
+
+        $rows = $query->join('master_pekerjaan', 'checklist_pekerjaan.master_pekerjaan_id', '=', 'master_pekerjaan.id')
+            ->select('checklist_pekerjaan.*')
+            ->orderBy('tanggal', 'desc')
+            ->orderBy('master_pekerjaan.urutan')
+            ->get();
+
+        $filename = 'checklist_' . str_replace(' ', '_', $petugas->name) . '_' . $petugas->nip . '_' . now()->toDateString() . '.csv';
+
+        $headers = ['No', 'Tanggal', 'Area', 'Jenis Pekerjaan', 'Tugas', 'Status', 'Dibuat Pada', 'Diperbarui Pada'];
+
+        $callback = function () use ($rows, $headers) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($file, $headers);
+
+            $index = 1;
+            foreach ($rows as $row) {
+                fputcsv($file, [
+                    $index++,
+                    $row->tanggal,
+                    $row->area ?? 'Belum ditentukan',
+                    ucfirst($row->jenis_pekerjaan),
+                    $row->tugas,
+                    $row->status === 'sudah' ? 'Sudah' : 'Belum',
+                    $row->created_at,
+                    $row->updated_at,
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->streamDownload($callback, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    public function exportAll(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $nip = $request->query('nip');
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+        $status = $request->query('status');
+        $area = $request->query('area');
+
+        $query = ChecklistPekerjaan::join('users', 'users.nip', '=', 'checklist_pekerjaan.nip')
+            ->join('master_pekerjaan', 'checklist_pekerjaan.master_pekerjaan_id', '=', 'master_pekerjaan.id')
+            ->select('checklist_pekerjaan.*', 'users.name as nama_petugas');
+
+        if ($nip) {
+            $query->where('checklist_pekerjaan.nip', $nip);
+        }
+
+        if ($startDate) {
+            $query->where('tanggal', '>=', $startDate);
+        }
+
+        if ($endDate) {
+            $query->where('tanggal', '<=', $endDate);
+        }
+
+        if ($status) {
+            $query->where('checklist_pekerjaan.status', $status);
+        }
+
+        if ($area) {
+            $query->where('checklist_pekerjaan.area', $area);
+        }
+
+        $rows = $query->orderBy('tanggal', 'desc')
+            ->orderBy('users.name')
+            ->orderBy('master_pekerjaan.urutan')
+            ->get();
+
+        if ($startDate && $endDate) {
+            $filename = 'checklist_semua_petugas_' . $startDate . '_' . $endDate . '.csv';
+        } else {
+            $filename = 'checklist_semua_petugas_' . now()->toDateString() . '.csv';
+        }
+
+        $headers = ['No', 'Nama Petugas', 'NIP', 'Tanggal', 'Area', 'Jenis Pekerjaan', 'Tugas', 'Status', 'Dibuat Pada', 'Diperbarui Pada'];
+
+        $callback = function () use ($rows, $headers) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($file, $headers);
+
+            $index = 1;
+            foreach ($rows as $row) {
+                fputcsv($file, [
+                    $index++,
+                    $row->nama_petugas,
+                    "\t" . $row->nip,
+                    $row->tanggal,
+                    $row->area ?? 'Belum ditentukan',
+                    ucfirst($row->jenis_pekerjaan),
+                    $row->tugas,
+                    $row->status === 'sudah' ? 'Sudah' : 'Belum',
+                    $row->created_at,
+                    $row->updated_at,
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->streamDownload($callback, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nip' => ['required', 'string'],
+            'tanggal' => ['required', 'date'],
+            'area' => ['required', 'string', 'max:255'],
+            'items' => ['required', 'array'],
+            'items.*.master_pekerjaan_id' => ['required', 'exists:master_pekerjaan,id'],
+            'items.*.status' => ['required', 'in:sudah,belum'],
+        ]);
+
+        $petugas = User::where('role', 'petugas')->where('nip', $validated['nip'])->first();
+
+        if (! $petugas) {
+            return back()->withErrors(['nip' => 'Petugas tidak ditemukan.']);
+        }
+
+        $masterIds = collect($validated['items'])->pluck('master_pekerjaan_id')->unique();
+        $masterTasks = MasterPekerjaan::whereIn('id', $masterIds)->get()->keyBy('id');
+
+        $area = $validated['area'];
+        $now = now();
+
+        $existingRecords = ChecklistPekerjaan::where('nip', $petugas->nip)
+            ->where('tanggal', $validated['tanggal'])
+            ->where('area', $area)
+            ->get()
+            ->keyBy('master_pekerjaan_id');
+
+        ChecklistPekerjaan::where('nip', $petugas->nip)
+            ->where('tanggal', $validated['tanggal'])
+            ->where('area', $area)
+            ->delete();
+
+        $rows = array_map(fn ($item) => [
+            'nip' => $petugas->nip,
+            'tanggal' => $validated['tanggal'],
+            'master_pekerjaan_id' => $item['master_pekerjaan_id'],
+            'tugas' => $masterTasks[$item['master_pekerjaan_id']]->nama_pekerjaan,
+            'area' => $area,
+            'jenis_pekerjaan' => $masterTasks[$item['master_pekerjaan_id']]->jenis_pekerjaan,
+            'status' => $item['status'],
+            'created_at' => $existingRecords[$item['master_pekerjaan_id']]->created_at ?? $now,
+            'updated_at' => $now,
+        ], $validated['items']);
+
+        ChecklistPekerjaan::insert($rows);
+
+        if ($request->input('_redirect') === '/form') {
+            $total = count($rows);
+            $done = count(array_filter($rows, fn ($r) => $r['status'] === 'sudah'));
+
+            return redirect('/form/pekerjaan?' . http_build_query(['tanggal' => $validated['tanggal'], 'area' => $area]))->with('submitted', [
+                'area' => $area,
+                'tanggal' => $validated['tanggal'],
+                'total' => $total,
+                'sudah' => $done,
+                'belum' => $total - $done,
+                'nama' => $petugas->name,
+            ]);
+        }
+
+        return redirect("/admin/checklist-pekerjaan/{$petugas->nip}?" . http_build_query(['tanggal' => $validated['tanggal'], 'area' => $area]));
+    }
+}
